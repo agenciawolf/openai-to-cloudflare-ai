@@ -5,10 +5,10 @@
  * - Retry automático em caso de falha
  * - Fallback para modelo secundário
  * - Validação de resposta
- * - Timeout handling
+ * - Suporte a parâmetros de geração (temperature, top_p, etc)
  */
 
-import { Env, CloudflareMessage, CloudflareTool, CloudflareResponse } from '../types';
+import { Env, CloudflareMessage, CloudflareTool, CloudflareResponse, CloudflareGenerationParams } from '../types';
 import { MODEL, FALLBACK_MODEL, AI_CONFIG } from '../config';
 import { log, logError, logWarn } from '../utils';
 
@@ -18,20 +18,11 @@ import { log, logError, logWarn } from '../utils';
 export interface AICallOptions {
     messages: CloudflareMessage[];
     tools?: CloudflareTool[];
-}
-
-/**
- * Resultado interno da chamada de IA
- */
-interface AICallResult {
-    response: CloudflareResponse;
-    modelUsed: string;
-    retryCount: number;
+    params?: CloudflareGenerationParams;
 }
 
 /**
  * Valida se a resposta da IA é válida
- * Uma resposta válida deve ter response OU tool_calls
  */
 function isValidResponse(response: CloudflareResponse): boolean {
     const hasResponse = !!response.response && response.response.trim().length > 0;
@@ -52,9 +43,16 @@ function delay(ms: number): Promise<void> {
 async function tryModel(
     env: Env,
     model: string,
-    options: { messages: CloudflareMessage[]; tools?: CloudflareTool[] }
+    options: {
+        messages: CloudflareMessage[];
+        tools?: CloudflareTool[];
+    } & CloudflareGenerationParams
 ): Promise<CloudflareResponse> {
-    log(`CALLING MODEL: ${model}`, { messagesCount: options.messages.length, hasTools: !!options.tools });
+    log(`CALLING MODEL: ${model}`, {
+        messagesCount: options.messages.length,
+        hasTools: !!options.tools,
+        params: { temperature: options.temperature, top_p: options.top_p, max_tokens: options.max_tokens }
+    });
 
     const response = await env.AI.run(model, options);
 
@@ -65,20 +63,16 @@ async function tryModel(
 
 /**
  * Chama o modelo Cloudflare AI com retry e fallback
- * 
- * Estratégia:
- * 1. Tenta modelo principal
- * 2. Se falhar ou resposta inválida, retry até maxRetries
- * 3. Se ainda falhar, tenta modelo de fallback
- * 4. Se tudo falhar, retorna resposta de erro amigável (nunca throw)
  */
 export async function callAI(
     env: Env,
     options: AICallOptions
 ): Promise<CloudflareResponse> {
+    // Construir opções com mensagens, tools e parâmetros de geração
     const runOptions = {
         messages: options.messages,
-        ...(options.tools?.length && { tools: options.tools })
+        ...(options.tools?.length && { tools: options.tools }),
+        ...(options.params && options.params),
     };
 
     log('AI.RUN OPTIONS', { model: MODEL, ...runOptions });
@@ -95,7 +89,6 @@ export async function callAI(
 
             logWarn('INVALID RESPONSE', { model: MODEL, attempt, response });
 
-            // Delay antes de retry (exceto última tentativa)
             if (attempt < AI_CONFIG.maxRetries) {
                 await delay(AI_CONFIG.retryDelayMs);
             }
@@ -108,14 +101,15 @@ export async function callAI(
         }
     }
 
-    // Tentar modelo de fallback
+    // Tentar modelo de fallback (sem tools e com params básicos)
     log('ATTEMPTING FALLBACK MODEL', { model: FALLBACK_MODEL });
 
     try {
-        // Fallback: remover tools (modelos menores podem não suportar bem)
         const fallbackOptions = {
             messages: options.messages,
-            // Não passar tools para fallback - forçar resposta de texto
+            // Preservar apenas params básicos para fallback
+            ...(options.params?.temperature !== undefined && { temperature: options.params.temperature }),
+            ...(options.params?.max_tokens !== undefined && { max_tokens: options.params.max_tokens }),
         };
 
         const fallbackResponse = await tryModel(env, FALLBACK_MODEL, fallbackOptions);
@@ -128,8 +122,7 @@ export async function callAI(
         logError('FALLBACK ERROR', error);
     }
 
-    // Último recurso: retornar resposta de erro amigável
-    // NUNCA deixar o usuário sem resposta
+    // Último recurso: resposta de erro amigável
     logError('ALL MODELS FAILED', { primaryModel: MODEL, fallbackModel: FALLBACK_MODEL });
 
     return {

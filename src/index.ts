@@ -5,13 +5,13 @@
  * Entry point do Cloudflare Worker.
  * 
  * @author AI Adapter Team
- * @version 2.1.0
+ * @version 2.2.0
  */
 
 import { Env, OpenAIResponse } from './types';
 import { MODEL, CORS_HEADERS } from './config';
 import { verifyAuth, handleCors, validateMethod, validateBody } from './middleware';
-import { convertMessages, convertTools, createOpenAIResponse } from './converters';
+import { convertMessages, convertTools, convertParams, createOpenAIResponse } from './converters';
 import { callAI } from './services';
 import { log, handleError, filterSensitiveHeaders, jsonResponse } from './utils';
 
@@ -65,13 +65,28 @@ export default {
         log('CLOUDFLARE TOOLS', cfTools);
       }
 
-      // 8. Chamar Cloudflare AI
-      const cfResponse = await callAI(env, {
-        messages: cfMessages,
-        tools: cfTools
+      // 8. Converter parâmetros de geração
+      const cfParams = convertParams({
+        temperature: requestData.temperature,
+        top_p: requestData.top_p,
+        top_k: requestData.top_k,
+        max_tokens: requestData.max_tokens,
+        frequency_penalty: requestData.frequency_penalty,
+        presence_penalty: requestData.presence_penalty,
+        repetition_penalty: requestData.repetition_penalty,
+        seed: requestData.seed,
       });
 
-      // 9. Converter response Cloudflare → OpenAI
+      log('GENERATION PARAMS', cfParams);
+
+      // 9. Chamar Cloudflare AI com todos os parâmetros
+      const cfResponse = await callAI(env, {
+        messages: cfMessages,
+        tools: cfTools,
+        params: cfParams
+      });
+
+      // 10. Converter response Cloudflare → OpenAI
       const openaiResponse: OpenAIResponse = createOpenAIResponse(
         cfResponse,
         requestData.model || MODEL
@@ -79,7 +94,7 @@ export default {
 
       log('OPENAI RESPONSE', openaiResponse);
 
-      // 10. Retornar resposta
+      // 11. Retornar resposta
       return jsonResponse(openaiResponse);
 
     } catch (error) {

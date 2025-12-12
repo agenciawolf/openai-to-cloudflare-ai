@@ -32,15 +32,30 @@ export interface OpenAIToolCall {
     };
 }
 
+/**
+ * Parâmetros de geração de texto
+ * Mapeamento OpenAI → Cloudflare Workers AI
+ */
+export interface GenerationParams {
+    temperature?: number;     // 0-5 (Cloudflare) vs 0-2 (OpenAI)
+    top_p?: number;           // 0.001-1
+    top_k?: number;           // 1-50 (Cloudflare only)
+    max_tokens?: number;      // default 256
+    frequency_penalty?: number; // -2 to 2
+    presence_penalty?: number;  // -2 to 2
+    repetition_penalty?: number; // 0-2 (Cloudflare only)
+    seed?: number;            // 1-9999999999
+}
+
 // Request no formato OpenAI
-export interface OpenAIRequest {
+export interface OpenAIRequest extends GenerationParams {
     model?: string;
     messages: OpenAIMessage[];
     tools?: OpenAITool[];
     tool_choice?: 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } };
-    temperature?: number;
-    max_tokens?: number;
     stream?: boolean;
+    // n8n specific (ignorados)
+    reasoning_effort?: string;
 }
 
 // Choice na resposta OpenAI
