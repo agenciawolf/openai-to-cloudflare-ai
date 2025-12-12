@@ -2,8 +2,18 @@
  * Configurações e constantes da aplicação
  */
 
-// Modelo que suporta function calling nativamente
+// Modelo principal (suporta function calling)
 export const MODEL = '@hf/nousresearch/hermes-2-pro-mistral-7b';
+
+// Modelo de fallback (caso o principal falhe)
+export const FALLBACK_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+
+// Configurações de retry
+export const AI_CONFIG = {
+    maxRetries: 2,
+    retryDelayMs: 500,
+    timeoutMs: 30000,
+} as const;
 
 // Habilitar logging (pode ser controlado por env var no futuro)
 export const DEBUG_LOGGING = true;
