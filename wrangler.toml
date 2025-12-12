@@ -4,3 +4,13 @@ main = "src/index.ts"
 
 [ai]
 binding = "AI"
+
+# Observability - Logs habilitados para debug
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
