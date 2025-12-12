@@ -2,8 +2,8 @@
  * Middleware de Validação de Request
  */
 
-import { OpenAIRequest, OpenAIError } from '../types';
-import { CORS_HEADERS } from '../config';
+import { OpenAIRequest } from '../types';
+import { Errors } from '../utils/response';
 
 /**
  * Resultado da validação
@@ -19,17 +19,7 @@ export interface ValidationResult {
  */
 export function validateMethod(request: Request): Response | null {
     if (request.method !== 'POST') {
-        const error: OpenAIError = {
-            error: {
-                message: 'Method not allowed. Use POST.',
-                type: 'invalid_request_error'
-            }
-        };
-
-        return new Response(JSON.stringify(error), {
-            status: 405,
-            headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
-        });
+        return Errors.methodNotAllowed('Method not allowed. Use POST.');
     }
     return null;
 }
@@ -45,7 +35,7 @@ export async function validateBody(request: Request): Promise<ValidationResult> 
         if (!data.messages || !Array.isArray(data.messages)) {
             return {
                 success: false,
-                error: createValidationError('messages is required and must be an array')
+                error: Errors.badRequest('messages is required and must be an array')
             };
         }
 
@@ -53,7 +43,7 @@ export async function validateBody(request: Request): Promise<ValidationResult> 
         if (data.messages.length === 0) {
             return {
                 success: false,
-                error: createValidationError('messages array cannot be empty')
+                error: Errors.badRequest('messages array cannot be empty')
             };
         }
 
@@ -63,7 +53,7 @@ export async function validateBody(request: Request): Promise<ValidationResult> 
             if (!msg.role) {
                 return {
                     success: false,
-                    error: createValidationError(`messages[${i}].role is required`)
+                    error: Errors.badRequest(`messages[${i}].role is required`)
                 };
             }
         }
@@ -73,7 +63,7 @@ export async function validateBody(request: Request): Promise<ValidationResult> 
             if (!Array.isArray(data.tools)) {
                 return {
                     success: false,
-                    error: createValidationError('tools must be an array')
+                    error: Errors.badRequest('tools must be an array')
                 };
             }
 
@@ -82,13 +72,13 @@ export async function validateBody(request: Request): Promise<ValidationResult> 
                 if (tool.type !== 'function') {
                     return {
                         success: false,
-                        error: createValidationError(`tools[${i}].type must be "function"`)
+                        error: Errors.badRequest(`tools[${i}].type must be "function"`)
                     };
                 }
                 if (!tool.function?.name) {
                     return {
                         success: false,
-                        error: createValidationError(`tools[${i}].function.name is required`)
+                        error: Errors.badRequest(`tools[${i}].function.name is required`)
                     };
                 }
             }
@@ -96,27 +86,10 @@ export async function validateBody(request: Request): Promise<ValidationResult> 
 
         return { success: true, data };
 
-    } catch (e) {
+    } catch {
         return {
             success: false,
-            error: createValidationError('Invalid JSON in request body')
+            error: Errors.badRequest('Invalid JSON in request body')
         };
     }
-}
-
-/**
- * Cria response de erro de validação
- */
-function createValidationError(message: string): Response {
-    const error: OpenAIError = {
-        error: {
-            message,
-            type: 'invalid_request_error'
-        }
-    };
-
-    return new Response(JSON.stringify(error), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
-    });
 }

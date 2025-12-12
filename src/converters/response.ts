@@ -3,20 +3,7 @@
  */
 
 import { OpenAIResponse, OpenAIToolCall, CloudflareResponse } from '../types';
-
-/**
- * Gera ID único para chat completion
- */
-function generateId(): string {
-    return 'chatcmpl-' + Math.random().toString(36).substring(2, 15);
-}
-
-/**
- * Gera ID único para tool call
- */
-function generateToolCallId(): string {
-    return 'call_' + Math.random().toString(36).substring(2, 15);
-}
+import { generateCompletionId, generateToolCallId } from '../utils/crypto';
 
 /**
  * Converte tool_calls Cloudflare → OpenAI
@@ -39,6 +26,11 @@ export function convertToolCalls(cfToolCalls: CloudflareResponse['tool_calls']):
 }
 
 /**
+ * Fallback message quando resposta está vazia
+ */
+const EMPTY_RESPONSE_FALLBACK = 'Desculpe, não consegui processar sua solicitação.';
+
+/**
  * Cria response no formato OpenAI completo
  */
 export function createOpenAIResponse(
@@ -46,16 +38,16 @@ export function createOpenAIResponse(
     model: string
 ): OpenAIResponse {
     const toolCalls = convertToolCalls(cfResponse.tool_calls);
-    const hasToolCalls = toolCalls && toolCalls.length > 0;
+    const hasToolCalls = !!toolCalls && toolCalls.length > 0;
 
     // Garantir que content nunca seja vazio quando não há tool_calls
-    let content: string | null = cfResponse.response || null;
+    let content: string | null = cfResponse.response ?? null;
     if (!hasToolCalls && (!content || content.trim().length === 0)) {
-        content = 'Desculpe, não consegui processar sua solicitação.';
+        content = EMPTY_RESPONSE_FALLBACK;
     }
 
     return {
-        id: generateId(),
+        id: generateCompletionId(),
         object: 'chat.completion',
         created: Math.floor(Date.now() / 1000),
         model,

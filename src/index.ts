@@ -5,7 +5,7 @@
  * Entry point do Cloudflare Worker.
  * 
  * @author AI Adapter Team
- * @version 2.0.0
+ * @version 2.1.0
  */
 
 import { Env, OpenAIResponse } from './types';
@@ -13,7 +13,7 @@ import { MODEL, CORS_HEADERS } from './config';
 import { verifyAuth, handleCors, validateMethod, validateBody } from './middleware';
 import { convertMessages, convertTools, createOpenAIResponse } from './converters';
 import { callAI } from './services';
-import { log, handleError } from './utils';
+import { log, handleError, filterSensitiveHeaders, jsonResponse } from './utils';
 
 /**
  * Handler principal do Worker
@@ -36,11 +36,11 @@ export default {
     }
 
     try {
-      // 4. Log do request
+      // 4. Log do request (headers filtrados)
       log('=== REQUEST RECEBIDO ===', {
         method: request.method,
         url: request.url,
-        headers: Object.fromEntries(request.headers.entries())
+        headers: filterSensitiveHeaders(Object.fromEntries(request.headers.entries()))
       });
 
       // 5. Validar body
@@ -57,7 +57,7 @@ export default {
       log('CLOUDFLARE MESSAGES', cfMessages);
 
       // 7. Converter tools se existirem
-      const cfTools = requestData.tools
+      const cfTools = requestData.tools?.length
         ? convertTools(requestData.tools)
         : undefined;
 
@@ -80,9 +80,7 @@ export default {
       log('OPENAI RESPONSE', openaiResponse);
 
       // 10. Retornar resposta
-      return new Response(JSON.stringify(openaiResponse), {
-        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
-      });
+      return jsonResponse(openaiResponse);
 
     } catch (error) {
       return handleError(error, 'Processing request');

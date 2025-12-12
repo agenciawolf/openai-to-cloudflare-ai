@@ -1,6 +1,8 @@
 /**
  * Converter: OpenAI Messages → Cloudflare Messages
  * 
+ * Single-pass otimizado: constrói mapa e converte em uma única iteração
+ * 
  * Mapeamentos:
  * - developer → system (OpenAI GPT-4+ alias)
  * - tool_call_id → name (Cloudflare usa name para identificar tools)
@@ -11,13 +13,13 @@ import { OpenAIMessage, CloudflareMessage } from '../types';
 /**
  * Mapa de roles OpenAI → Cloudflare
  */
-const ROLE_MAP: Record<string, CloudflareMessage['role']> = {
+const ROLE_MAP: Readonly<Record<string, CloudflareMessage['role']>> = {
     'system': 'system',
-    'developer': 'system',  // OpenAI GPT-4+ usa 'developer' como alias
+    'developer': 'system',
     'user': 'user',
     'assistant': 'assistant',
     'tool': 'tool',
-};
+} as const;
 
 /**
  * Mapeia role OpenAI para Cloudflare
@@ -27,36 +29,27 @@ function mapRole(role: string): CloudflareMessage['role'] {
 }
 
 /**
- * Constrói mapa de tool_call_id → tool_name
- * Necessário porque Cloudflare usa 'name' e OpenAI usa 'tool_call_id'
- */
-function buildToolCallIdMap(messages: OpenAIMessage[]): Record<string, string> {
-    const map: Record<string, string> = {};
-
-    for (const msg of messages) {
-        if (msg.role === 'assistant' && msg.tool_calls) {
-            for (const tc of msg.tool_calls) {
-                map[tc.id] = tc.function.name;
-            }
-        }
-    }
-
-    return map;
-}
-
-/**
  * Converte array de messages OpenAI para Cloudflare
+ * Otimizado: single-pass com building de map inline
  */
 export function convertMessages(openaiMessages: OpenAIMessage[]): CloudflareMessage[] {
-    const toolCallIdMap = buildToolCallIdMap(openaiMessages);
+    // Construímos o mapa enquanto iteramos
+    const toolCallIdMap: Record<string, string> = {};
+    const result: CloudflareMessage[] = [];
 
-    return openaiMessages.map(msg => {
-        let content = msg.content || '';
+    for (const msg of openaiMessages) {
+        // Coletar tool_call_ids para mapeamento futuro
+        if (msg.role === 'assistant' && msg.tool_calls) {
+            for (const tc of msg.tool_calls) {
+                toolCallIdMap[tc.id] = tc.function.name;
+            }
+        }
+
+        let content = msg.content ?? '';
         let name: string | undefined;
 
         // Tool response: mapear tool_call_id → name
         if (msg.role === 'tool') {
-            content = msg.content || '';
             if (msg.tool_call_id && toolCallIdMap[msg.tool_call_id]) {
                 name = toolCallIdMap[msg.tool_call_id];
             } else if (msg.name) {
@@ -72,7 +65,6 @@ export function convertMessages(openaiMessages: OpenAIMessage[]): CloudflareMess
                     arguments: JSON.parse(tc.function.arguments)
                 })));
             } catch {
-                // Se falhar parse, usar vazio
                 content = '[]';
             }
         }
@@ -86,6 +78,8 @@ export function convertMessages(openaiMessages: OpenAIMessage[]): CloudflareMess
             cfMessage.name = name;
         }
 
-        return cfMessage;
-    });
+        result.push(cfMessage);
+    }
+
+    return result;
 }
