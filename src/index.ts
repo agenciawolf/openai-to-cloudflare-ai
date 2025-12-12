@@ -48,9 +48,11 @@ interface OpenAIRequest {
 }
 
 // Tipos Cloudflare (o que enviamos para AI.run)
+// Nota: Cloudflare usa 'name' para tool responses, não 'tool_call_id'
 interface CloudflareMessage {
   role: string;
   content: string;
+  name?: string; // Usado para identificar qual tool respondeu
 }
 
 interface CloudflareTool {
@@ -83,11 +85,8 @@ export interface Env {
 // CONFIGURAÇÃO
 // ============================================================================
 
-// Modelo - usando llama-3.1 que é mais estável
-// Alternativas com suporte a tools:
-// - '@hf/nousresearch/hermes-2-pro-mistral-7b' (function calling nativo)
-// - '@cf/meta/llama-3.1-8b-instruct' (mais estável, menos suporte a tools)
-const MODEL = '@cf/meta/llama-3.1-8b-instruct';
+// Modelo - usando hermes-2-pro-mistral-7b que é especificamente treinado para function calling
+const MODEL = '@hf/nousresearch/hermes-2-pro-mistral-7b';
 
 // Habilitar logging detalhado (true para debug, false para produção)
 const DEBUG_LOGGING = true;
@@ -150,17 +149,40 @@ function mapRoleToCloudflare(role: string): string {
 
 /**
  * Converte messages do formato OpenAI para Cloudflare
+ * 
+ * IMPORTANTE: Cloudflare usa 'name' para identificar tool responses,
+ * não 'tool_call_id' como a OpenAI. Precisamos mapear isso.
  */
 function convertMessagesToCloudflare(openaiMessages: OpenAIMessage[]): CloudflareMessage[] {
+  // Construir mapa de tool_call_id -> tool_name dos tool_calls anteriores
+  const toolCallIdToName: Record<string, string> = {};
+
+  for (const msg of openaiMessages) {
+    if (msg.role === 'assistant' && msg.tool_calls) {
+      for (const tc of msg.tool_calls) {
+        toolCallIdToName[tc.id] = tc.function.name;
+      }
+    }
+  }
+
   return openaiMessages.map(msg => {
     let content = msg.content || '';
+    let name: string | undefined;
 
-    // Se é uma mensagem tool response, formatar adequadamente
-    if (msg.role === 'tool' && msg.tool_call_id) {
+    // Se é uma mensagem tool response, usar o name da tool
+    if (msg.role === 'tool') {
       content = msg.content || '';
+      // Buscar o nome da tool pelo tool_call_id
+      if (msg.tool_call_id && toolCallIdToName[msg.tool_call_id]) {
+        name = toolCallIdToName[msg.tool_call_id];
+      } else if (msg.name) {
+        // Fallback: usar nome direto se fornecido
+        name = msg.name;
+      }
     }
 
     // Se assistant tem tool_calls, converter para content
+    // (Cloudflare não usa tool_calls no histórico, converte para texto)
     if (msg.role === 'assistant' && msg.tool_calls) {
       content = JSON.stringify(msg.tool_calls.map(tc => ({
         name: tc.function.name,
@@ -171,10 +193,17 @@ function convertMessagesToCloudflare(openaiMessages: OpenAIMessage[]): Cloudflar
     // Mapear role para formato Cloudflare
     const mappedRole = mapRoleToCloudflare(msg.role);
 
-    return {
+    const cfMessage: CloudflareMessage = {
       role: mappedRole,
       content: content
     };
+
+    // Adicionar name se for mensagem tool
+    if (name) {
+      cfMessage.name = name;
+    }
+
+    return cfMessage;
   });
 }
 
