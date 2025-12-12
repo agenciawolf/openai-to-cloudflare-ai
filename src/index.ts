@@ -10,8 +10,9 @@
 // ============================================================================
 
 // Tipos OpenAI (o que n8n envia)
+// Nota: n8n/OpenAI GPT-4+ usa 'developer' como alias de 'system'
 interface OpenAIMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
+  role: 'system' | 'developer' | 'user' | 'assistant' | 'tool';
   content: string | null;
   tool_calls?: OpenAIToolCall[];
   tool_call_id?: string;
@@ -128,6 +129,23 @@ function convertToolCallsToOpenAI(cfToolCalls: CloudflareToolCall[]): OpenAITool
 }
 
 /**
+ * Mapeia roles do OpenAI/n8n para roles suportados pelo Cloudflare
+ * - 'developer' (OpenAI GPT-4+ style) → 'system'
+ * - 'tool' permanece como 'tool'
+ * - outros permanecem iguais
+ */
+function mapRoleToCloudflare(role: string): string {
+  const roleMap: Record<string, string> = {
+    'developer': 'system',  // OpenAI GPT-4+ usa 'developer' como system
+    'system': 'system',
+    'user': 'user',
+    'assistant': 'assistant',
+    'tool': 'tool',
+  };
+  return roleMap[role] || 'user'; // fallback para user se role desconhecido
+}
+
+/**
  * Converte messages do formato OpenAI para Cloudflare
  */
 function convertMessagesToCloudflare(openaiMessages: OpenAIMessage[]): CloudflareMessage[] {
@@ -147,8 +165,11 @@ function convertMessagesToCloudflare(openaiMessages: OpenAIMessage[]): Cloudflar
       })));
     }
 
+    // Mapear role para formato Cloudflare
+    const mappedRole = mapRoleToCloudflare(msg.role);
+
     return {
-      role: msg.role === 'tool' ? 'tool' : msg.role,
+      role: mappedRole,
       content: content
     };
   });
