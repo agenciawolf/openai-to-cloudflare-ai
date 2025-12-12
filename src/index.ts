@@ -83,8 +83,11 @@ export interface Env {
 // CONFIGURAÇÃO
 // ============================================================================
 
-// Modelo que suporta function calling
-const MODEL = '@hf/nousresearch/hermes-2-pro-mistral-7b';
+// Modelo - usando llama-3.1 que é mais estável
+// Alternativas com suporte a tools:
+// - '@hf/nousresearch/hermes-2-pro-mistral-7b' (function calling nativo)
+// - '@cf/meta/llama-3.1-8b-instruct' (mais estável, menos suporte a tools)
+const MODEL = '@cf/meta/llama-3.1-8b-instruct';
 
 // Habilitar logging detalhado (true para debug, false para produção)
 const DEBUG_LOGGING = true;
@@ -177,6 +180,8 @@ function convertMessagesToCloudflare(openaiMessages: OpenAIMessage[]): Cloudflar
 
 /**
  * Cria resposta no formato OpenAI
+ * IMPORTANTE: content NUNCA pode ser null/vazio quando não há tool_calls
+ * ou o n8n vai dar erro "model output must contain either output text or tool calls"
  */
 function createOpenAIResponse(
   content: string | null,
@@ -184,6 +189,16 @@ function createOpenAIResponse(
   model: string
 ): object {
   const hasToolCalls = toolCalls && toolCalls.length > 0;
+
+  // Garantir que content nunca seja null/vazio quando não há tool_calls
+  let finalContent: string | null = content;
+  if (!hasToolCalls) {
+    if (!content || content.trim().length === 0) {
+      finalContent = 'Desculpe, não consegui processar sua solicitação.';
+    }
+  } else {
+    finalContent = null; // Quando há tool_calls, content deve ser null
+  }
 
   return {
     id: generateId(),
@@ -195,7 +210,7 @@ function createOpenAIResponse(
         index: 0,
         message: {
           role: 'assistant',
-          content: hasToolCalls ? null : content,
+          content: finalContent,
           ...(hasToolCalls && { tool_calls: toolCalls })
         },
         finish_reason: hasToolCalls ? 'tool_calls' : 'stop'
