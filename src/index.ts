@@ -300,10 +300,27 @@ export default {
 
       log('CLOUDFLARE RESPONSE', cfResult);
 
+      // Verificar se resposta está vazia (bug do modelo)
+      const hasResponse = cfResult.response && cfResult.response.trim().length > 0;
+      const hasToolCalls = cfResult.tool_calls && cfResult.tool_calls.length > 0;
+
+      if (!hasResponse && !hasToolCalls) {
+        log('WARNING', 'Cloudflare retornou resposta vazia! Usando fallback.');
+        // Fallback: retornar mensagem indicando que precisa de mais contexto
+        const fallbackResponse = createOpenAIResponse(
+          'Desculpe, não consegui processar sua solicitação. Por favor, tente novamente com mais detalhes.',
+          undefined,
+          requestData.model || MODEL
+        );
+        return new Response(JSON.stringify(fallbackResponse), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
+        });
+      }
+
       // Converter resposta para formato OpenAI
       let openaiToolCalls: OpenAIToolCall[] | undefined;
-      if (cfResult.tool_calls && cfResult.tool_calls.length > 0) {
-        openaiToolCalls = convertToolCallsToOpenAI(cfResult.tool_calls);
+      if (hasToolCalls) {
+        openaiToolCalls = convertToolCallsToOpenAI(cfResult.tool_calls!);
         log('OPENAI TOOL_CALLS', openaiToolCalls);
       }
 
