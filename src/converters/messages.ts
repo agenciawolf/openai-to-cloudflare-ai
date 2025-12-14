@@ -1,18 +1,11 @@
 /**
  * Converter: OpenAI Messages → Cloudflare Messages
  * 
- * Single-pass otimizado: constrói mapa e converte em uma única iteração
- * 
- * Mapeamentos:
- * - developer → system (OpenAI GPT-4+ alias)
- * - tool_call_id → name (Cloudflare usa name para identificar tools)
+ * Otimizado: single-pass conversion + System Logic Injection para forçar tools
  */
 
 import { OpenAIMessage, CloudflareMessage } from '../types';
 
-/**
- * Mapa de roles OpenAI → Cloudflare
- */
 const ROLE_MAP: Readonly<Record<string, CloudflareMessage['role']>> = {
     'system': 'system',
     'developer': 'system',
@@ -21,24 +14,42 @@ const ROLE_MAP: Readonly<Record<string, CloudflareMessage['role']>> = {
     'tool': 'tool',
 } as const;
 
-/**
- * Mapeia role OpenAI para Cloudflare
- */
 function mapRole(role: string): CloudflareMessage['role'] {
     return ROLE_MAP[role] || 'user';
 }
 
 /**
- * Converte array de messages OpenAI para Cloudflare
- * Otimizado: single-pass com building de map inline
+ * Prompt injection para forçar o modelo a usar tools se disponíveis
  */
-export function convertMessages(openaiMessages: OpenAIMessage[]): CloudflareMessage[] {
-    // Construímos o mapa enquanto iteramos
+const SYSTEM_TOOL_INJECTION =
+    `\n\n[SYSTEM IMPORTANT INSTRUCTION]
+You have access to TOOLS.
+If the user's request requires action that a tool can perform, you MUST generate a Tool Call.
+DO NOT provide the answer in the content if a tool can do it.
+Prioritize calling tools over writing text responses.
+Output ONLY the tool call if applicable.`;
+
+/**
+ * Converte messages e injeta lógica de system se houver tools
+ * @param openaiMessages - Mensagens originais
+ * @param hasTools - Se há tools definidas no request
+ */
+export function convertMessages(
+    openaiMessages: OpenAIMessage[],
+    hasTools: boolean = false
+): CloudflareMessage[] {
     const toolCallIdMap: Record<string, string> = {};
     const result: CloudflareMessage[] = [];
 
-    for (const msg of openaiMessages) {
-        // Coletar tool_call_ids para mapeamento futuro
+    // Encontrar a última mensagem de sistema para injetar instrução
+    let lastSystemIndex = -1;
+    // Se não tiver system message, vamos criar uma? Melhor injetar na última user message se necessário,
+    // mas idealmente injetamos no último system.
+
+    for (let i = 0; i < openaiMessages.length; i++) {
+        const msg = openaiMessages[i];
+
+        // Coletar tool_call_ids
         if (msg.role === 'assistant' && msg.tool_calls) {
             for (const tc of msg.tool_calls) {
                 toolCallIdMap[tc.id] = tc.function.name;
@@ -46,9 +57,10 @@ export function convertMessages(openaiMessages: OpenAIMessage[]): CloudflareMess
         }
 
         let content = msg.content ?? '';
+        let role = mapRole(msg.role);
         let name: string | undefined;
 
-        // Tool response: mapear tool_call_id → name
+        // Tool response mapping
         if (msg.role === 'tool') {
             if (msg.tool_call_id && toolCallIdMap[msg.tool_call_id]) {
                 name = toolCallIdMap[msg.tool_call_id];
@@ -57,7 +69,7 @@ export function convertMessages(openaiMessages: OpenAIMessage[]): CloudflareMess
             }
         }
 
-        // Assistant com tool_calls: serializar para content
+        // Assistant tool calls serialization
         if (msg.role === 'assistant' && msg.tool_calls) {
             try {
                 content = JSON.stringify(msg.tool_calls.map(tc => ({
@@ -69,16 +81,30 @@ export function convertMessages(openaiMessages: OpenAIMessage[]): CloudflareMess
             }
         }
 
-        const cfMessage: CloudflareMessage = {
-            role: mapRole(msg.role),
-            content
-        };
-
-        if (name) {
-            cfMessage.name = name;
+        // Se é system message, marcamos índice para injeção posterior
+        // (Mas só injetamos se tiver tools)
+        if (role === 'system' && hasTools) {
+            lastSystemIndex = result.length; // Index no array de resultado (atual)
         }
 
+        const cfMessage: CloudflareMessage = { role, content };
+        if (name) cfMessage.name = name;
+
         result.push(cfMessage);
+    }
+
+    // System Prompt Injection Logic
+    if (hasTools) {
+        if (lastSystemIndex !== -1) {
+            // Append instruction to existing system message
+            result[lastSystemIndex].content += SYSTEM_TOOL_INJECTION;
+        } else {
+            // No system message found? Prepend one.
+            result.unshift({
+                role: 'system',
+                content: `You are a helpful assistant.${SYSTEM_TOOL_INJECTION}`
+            });
+        }
     }
 
     return result;

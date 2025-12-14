@@ -5,7 +5,7 @@
  * Entry point do Cloudflare Worker.
  * 
  * @author AI Adapter Team
- * @version 2.2.0
+ * @version 2.3.0
  */
 
 import { Env, OpenAIResponse } from './types';
@@ -52,18 +52,19 @@ export default {
 
       log('REQUEST BODY', requestData);
 
-      // 6. Converter messages OpenAI → Cloudflare
-      const cfMessages = convertMessages(requestData.messages);
-      log('CLOUDFLARE MESSAGES', cfMessages);
-
-      // 7. Converter tools se existirem
-      const cfTools = requestData.tools?.length
-        ? convertTools(requestData.tools)
+      // 6. Converter tools se existirem
+      const hasTools = !!(requestData.tools && requestData.tools.length > 0);
+      const cfTools = hasTools
+        ? convertTools(requestData.tools!)
         : undefined;
 
       if (cfTools) {
         log('CLOUDFLARE TOOLS', cfTools);
       }
+
+      // 7. Converter messages OpenAI → Cloudflare (com Logic Injection se tiver tools)
+      const cfMessages = convertMessages(requestData.messages, hasTools);
+      log('CLOUDFLARE MESSAGES', cfMessages);
 
       // 8. Converter parâmetros de geração
       const cfParams = convertParams({
@@ -75,6 +76,8 @@ export default {
         presence_penalty: requestData.presence_penalty,
         repetition_penalty: requestData.repetition_penalty,
         seed: requestData.seed,
+        lora: requestData.lora,
+        response_format: requestData.response_format
       });
 
       log('GENERATION PARAMS', cfParams);

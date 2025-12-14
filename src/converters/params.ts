@@ -34,7 +34,7 @@ function clamp(value: number, min: number, max: number): number {
 export function convertParams(params: GenerationParams): CloudflareGenerationParams {
     const result: CloudflareGenerationParams = {};
 
-    // Temperature (OpenAI: 0-2, Cloudflare: 0-5)
+    // Temperature
     if (params.temperature !== undefined) {
         result.temperature = clamp(
             params.temperature,
@@ -52,7 +52,7 @@ export function convertParams(params: GenerationParams): CloudflareGenerationPar
         );
     }
 
-    // Top K (Cloudflare only)
+    // Top K
     if (params.top_k !== undefined) {
         result.top_k = clamp(
             params.top_k,
@@ -84,7 +84,7 @@ export function convertParams(params: GenerationParams): CloudflareGenerationPar
         );
     }
 
-    // Repetition penalty (Cloudflare only)
+    // Repetition penalty
     if (params.repetition_penalty !== undefined) {
         result.repetition_penalty = clamp(
             params.repetition_penalty,
@@ -100,6 +100,16 @@ export function convertParams(params: GenerationParams): CloudflareGenerationPar
             CLOUDFLARE_LIMITS.seed.min,
             CLOUDFLARE_LIMITS.seed.max
         );
+    }
+
+    // LoRA Support
+    if (params.lora) {
+        result.lora = params.lora;
+    }
+
+    // Response Format (para JSON mode)
+    if (params.response_format) {
+        result.response_format = params.response_format;
     }
 
     return result;

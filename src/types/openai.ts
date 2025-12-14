@@ -34,7 +34,6 @@ export interface OpenAIToolCall {
 
 /**
  * Parâmetros de geração de texto
- * Mapeamento OpenAI → Cloudflare Workers AI
  */
 export interface GenerationParams {
     temperature?: number;     // 0-5 (Cloudflare) vs 0-2 (OpenAI)
@@ -45,6 +44,8 @@ export interface GenerationParams {
     presence_penalty?: number;  // -2 to 2
     repetition_penalty?: number; // 0-2 (Cloudflare only)
     seed?: number;            // 1-9999999999
+    lora?: string;            // Cloudflare LoRA Support
+    response_format?: { type: 'json_object' | 'text' | 'json_schema'; json_schema?: unknown };
 }
 
 // Request no formato OpenAI
@@ -54,7 +55,7 @@ export interface OpenAIRequest extends GenerationParams {
     tools?: OpenAITool[];
     tool_choice?: 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } };
     stream?: boolean;
-    // n8n specific (ignorados)
+    // n8n specific check (ignorados)
     reasoning_effort?: string;
 }
 

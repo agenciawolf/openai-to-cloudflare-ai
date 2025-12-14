@@ -31,7 +31,6 @@ export interface CloudflareResponse {
 
 /**
  * Parâmetros de geração suportados pela Cloudflare AI
- * Documentação: https://developers.cloudflare.com/workers-ai/models/hermes-2-pro-mistral-7b/
  */
 export interface CloudflareGenerationParams {
     temperature?: number;       // default 0.6, min 0, max 5
@@ -42,6 +41,10 @@ export interface CloudflareGenerationParams {
     presence_penalty?: number;  // min -2, max 2
     repetition_penalty?: number; // min 0, max 2
     seed?: number;              // min 1, max 9999999999
+    // LoRA Support
+    lora?: string;
+    // JSON Mode Support
+    response_format?: { type: 'json_object' | 'text' | 'json_schema'; json_schema?: unknown };
 }
 
 // Environment bindings
